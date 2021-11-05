@@ -2,11 +2,14 @@ const pool = require('../lib/utils/pool.js');
 const setup = require('../data/setup.js');
 const request = require('supertest');
 const app = require('../lib/app.js');
+const Toxicity = require('../lib/utils/toxicity.js');
 
 describe('chat-app routes', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    //makes the toxicity model load
+    await Toxicity.isToxic('test');
     return setup(pool);
-  });
+  }, 10000);
 
   afterAll(() => {
     pool.end();
@@ -80,7 +83,6 @@ describe('chat-app routes', () => {
       .send({ name: 'bobs room' });
     const roomId = postRoomRes.body?.room?.id;
 
-    console.log('sent roomid', roomId);
     const postMessageRes = await request(app)
       .post(`/api/v1/rooms/${roomId}/messages/`)
       .set('Authorization', token)
@@ -92,9 +94,36 @@ describe('chat-app routes', () => {
       .set('Authorization', token);
     const messages = getMessagesRes.body?.messages;
 
-    console.log('getMessagesRes.body', getMessagesRes.body);
-    
     expect(message.message).toEqual(testMessageText);
     expect(messages).toContainEqual(message);
+  }, 15000);
+
+  test('toxic messages get filtered', async () => {
+    const userData = {
+      username: 'bobb',
+      password: 'bobb'
+    };
+
+    const testMessageText = 'youre a moron';
+
+    const signupRes = await request(app)
+      .post('/users/signup')
+      .send(userData);
+    const { token } = signupRes.body;
+
+    const postRoomRes = await request(app)
+      .post('/api/v1/rooms/')
+      .set('Authorization', token)
+      .send({ name: 'bobs room' });
+    const roomId = postRoomRes.body?.room?.id;
+
+    const postMessageRes = await request(app)
+      .post(`/api/v1/rooms/${roomId}/messages/`)
+      .set('Authorization', token)
+      .send({ message: testMessageText });
+    const message = postMessageRes.body?.message;
+
+    expect(message.message).toEqual('~🤖 This message had a greater than 90% chance of being toxic so it has been filtered 🤖~');
   });
+
 });
